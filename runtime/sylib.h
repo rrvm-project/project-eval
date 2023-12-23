@@ -1,9 +1,12 @@
-#ifndef __SYLIB_H_
-#define __SYLIB_H_
+#ifndef __SYLIB_HH_
+#define __SYLIB_HH_
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <sys/time.h>
+
+extern "C" {
+
 /* Input & output functions */
 int getint(), getch(), getarray(int a[]);
 float getfloat();
@@ -25,5 +28,7 @@ __attribute__((destructor)) void after_main();
 
 void _sysy_starttime(int lineno);
 void _sysy_stoptime(int lineno);
+
+}
 
 #endif

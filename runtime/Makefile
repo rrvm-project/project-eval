@@ -1,15 +1,18 @@
 CC = riscv64-unknown-elf-gcc -march=rv64gc -mabi=lp64f -xc++
+#CC = riscv64-unknown-elf-gcc -march=rv32gc -mabi=ilp32f -xc++
 AR = riscv64-unknown-elf-ar
-CLEAN = rm -f
+RM = rm -f
 
-all: clean libsysy.a
+.PHONY: clean
+
+all: libsysy.a
 
 libsysy.a: sylib.o
 	$(AR) rcs $@ $<
 
-sylib.o: sylib.c sylib.h
+sylib.o: sylib.cc sylib.h
 	$(CC) -O2 -c -o $@ $<
 
 clean:
-	$(CLEAN) libsysy.a
-	$(CLEAN) sylib.o
+	$(RM) libsysy.a
+	$(RM) sylib.o

@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <sys/time.h>
 
+extern "C" {
+
 /* Global variables */
 struct timeval _sysy_start, _sysy_end;
 int _sysy_l1[_SYSY_N], _sysy_l2[_SYSY_N];
@@ -103,4 +105,6 @@ void _sysy_stoptime(int lineno) {
   _sysy_h[_sysy_idx] += _sysy_m[_sysy_idx] / 60;
   _sysy_m[_sysy_idx] %= 60;
   _sysy_idx++;
+}
+
 }
