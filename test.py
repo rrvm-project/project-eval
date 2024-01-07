@@ -18,12 +18,11 @@ TEST_ROUND = 1
 TIMEOUT = 120
 
 # NOTE: 在这里修改你的编译器路径和参数。此处的默认值对应着gcc
-compiler_path = "riscv64-unknown-elf-gcc"
-compiler_args = "-O2 -march=rv64gc -mabi=lp64f -xc++ -S -include ./runtime/sylib.h"
-# compiler_args = "-O2 -march=rv32gc -mabi=ilp32f -xc++ -S -include ./runtime/sylib.h"
+compiler_path = "../target/release/sysyc"
+compiler_args = "-O1"
 
 # 调用gcc进行链接的参数
-gcc_args_rv64 = "-march=rv64gc -mabi=lp64f"
+gcc_args_rv64 = "-march=rv64gc -mabi=lp64d"
 gcc_args_rv32 = "-march=rv32gc -mabi=ilp32f"
 gcc_args = gcc_args_rv64
 
@@ -105,7 +104,7 @@ def run(
     average_time = 0
     for _ in range(round):
         proc = subprocess.Popen(
-            executable,
+            ["qemu-riscv64", executable],
             stdin=open(input) if os.path.exists(input) else None,
             stdout=open(output, 'w'), stderr=open(time, 'w'))
         try:
@@ -139,7 +138,7 @@ def test(config: Config, testcase: str) -> bool:
     ident = '%04d' % random.randint(0, 9999)
     assembly = os.path.join(config.tempdir, f'{testcase}-{ident}.s')
     # NOTE: 你可以在这里修改调用你的编译器的方式
-    command = (f'{config.compiler} {config.compiler_args} {source}'
+    command = (f'ulimit -s unlimited && {config.compiler} {config.compiler_args} {source}'
                 f' -o {assembly}')
     proc = subprocess.Popen(command, shell=True)
     try:
@@ -213,3 +212,4 @@ if __name__ == '__main__':
     else:
         for testcase in failed:
             print(info.format(f'`{testcase}` Failed'))
+        assert False, "Test fail"

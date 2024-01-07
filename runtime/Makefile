@@ -1,5 +1,4 @@
-CC = riscv64-unknown-elf-gcc -march=rv64gc -mabi=lp64f -xc++
-#CC = riscv64-unknown-elf-gcc -march=rv32gc -mabi=ilp32f -xc++
+CC = riscv64-unknown-elf-gcc -march=rv64gc -mabi=lp64d -xc++
 AR = riscv64-unknown-elf-ar
 RM = rm -f
 
