@@ -1,3 +1,4 @@
 sylib.o
 tmp
 build
+runtime/libsysy.a
