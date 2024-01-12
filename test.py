@@ -5,6 +5,7 @@ import subprocess
 import sys
 import random
 import shutil
+import time, math
 
 from argparse import ArgumentParser
 from enum import Enum, auto
@@ -27,12 +28,15 @@ gcc_args_rv64 = "-march=rv64gc -mabi=lp64f"
 gcc_args_rv32 = "-march=rv32gc -mabi=ilp32f"
 gcc_args = gcc_args_rv64
 
+scores = []
+
 class Config(NamedTuple):
     compiler: str
     testcases: str
     compiler_args: str
     tempdir: str
     parallel: bool
+    time: bool
 
 
 class Result(Enum):
@@ -43,12 +47,23 @@ class Result(Enum):
     GCC_ERROR = auto()
 
 
+def geometric_mean(numbers):
+    if not numbers:
+        return None
+
+    product = 1
+    for number in numbers:
+        product *= number
+
+    return product ** (1.0 / len(numbers))
+
 def get_config(argv: list[str]) -> Config:
     parser = ArgumentParser('simple-tester')
     parser.add_argument('-t', '--testcases',
                         metavar='<testcases>', required=True,
                         help='path to the directory containing testcases')
     parser.add_argument('-p', '--parallel', action='store_true', default=False, help='run parallely')
+    parser.add_argument('-s', '--statistic', action='store_true', default=False)
     index: int
     try:
         index = argv.index('--')
@@ -60,6 +75,7 @@ def get_config(argv: list[str]) -> Config:
                   compiler_args=compiler_args,
                   tempdir='build',
                   parallel=args.parallel,
+                  time=args.statistic
                   )
 
 
@@ -97,22 +113,24 @@ def run(
     name_body = os.path.basename(assembly).split('.')[0]
     executable = os.path.join(workdir, name_body + '.exec')
     output = os.path.join(workdir, name_body + '.stdout')
-    time = os.path.join(workdir, name_body + '.stderr')
+    outerr = os.path.join(workdir, name_body + '.stderr')
     if os.system(f'riscv64-unknown-elf-gcc {gcc_args} {assembly} runtime/libsysy.a'
                  f' -o {executable}') != 0:
         return Result.LINKER_ERROR
     answer_content, answer_exitcode = get_answer(answer)
     average_time = 0
     for _ in range(round):
+        start_time = time.time()
         proc = subprocess.Popen(
             executable,
             stdin=open(input) if os.path.exists(input) else None,
-            stdout=open(output, 'w'), stderr=open(time, 'w'))
+            stdout=open(output, 'w'), stderr=open(outerr, 'w'))
         try:
             proc.wait(TIMEOUT)
         except subprocess.TimeoutExpired:
             proc.kill()
             return Result.TIME_LIMIT_EXCEEDED
+        end_time = time.time()
         output_content = [line.strip()
                           for line in open(output).read().splitlines()]
         if proc.returncode != answer_exitcode \
@@ -120,13 +138,13 @@ def run(
             return Result.WRONG_ANSWER
         if round > 1:
             print('.', end='', flush=True)
-        t = get_time(time)
+        t = end_time - start_time
         if t is None:
             timing = False
         else:
             average_time += t
     if timing:
-        return average_time / 1_000 / round
+        return average_time * 1_000 / round
     else:
         return Result.PASSED
 
@@ -151,7 +169,7 @@ def test(config: Config, testcase: str) -> bool:
     if proc.returncode != 0:
         print(testcase, '\033[0;31mCompiler Error\033[0m')
         return False
-    result = run(config.tempdir, assembly, input, answer, TEST_ROUND)
+    result = run(config.tempdir, assembly, input, answer, TEST_ROUND, config.time)
     if result == Result.LINKER_ERROR:
         print(testcase, '\033[0;31mLinker Error\033[0m')
         return False
@@ -174,12 +192,13 @@ def test(config: Config, testcase: str) -> bool:
         and os.system(
             f'riscv64-unknown-elf-gcc -xc++ -O2 -S {gcc_args}'
             f' -include runtime/sylib.h {source} -o {assembly}') != 0 \
-        else run(config.tempdir, assembly, input, answer, 1)
+        else run(config.tempdir, assembly, input, answer, 1,config.time)
     if isinstance(result, Result):
         print(testcase, '\033[0;31mGCC Error\033[0m')
     else:
         print(testcase, f'\033[0;32m{runtime :.3f}ms / {result :.3f}ms'
                 f' = {result / runtime :.2%}\033[0m')
+    scores.append(min(result / runtime * 125, 100))
     return True
 
 
@@ -213,3 +232,5 @@ if __name__ == '__main__':
     else:
         for testcase in failed:
             print(info.format(f'`{testcase}` Failed'))
+    avg_score = geometric_mean(scores)
+    print(avg_score)
