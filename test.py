@@ -233,4 +233,4 @@ if __name__ == '__main__':
         for testcase in failed:
             print(info.format(f'`{testcase}` Failed'))
     avg_score = geometric_mean(scores)
-    print(avg_score)
+    print("Scores:", avg_score)
