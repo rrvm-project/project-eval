@@ -243,10 +243,6 @@ if __name__ == '__main__':
         print(info.format('All Passed'))
 
         if config.timing:
-            print('scores of testcases:')
-            for testcase, score in score_info:
-                print(testcase, score)
-
             mean_score = geometric_mean([t[1] for t in score_info])
             print("final score:", mean_score)
     else:
