@@ -19,8 +19,8 @@ void putfarray(int n, float a[]);
 void putf(char a[], ...);
 
 /* Timing function implementation */
-// #define starttime() _sysy_starttime(__LINE__)
-// #define stoptime() _sysy_stoptime(__LINE__)
+#define starttime() _sysy_starttime(__LINE__)
+#define stoptime() _sysy_stoptime(__LINE__)
 #define _SYSY_N 1024
 
 __attribute__((constructor)) void before_main();
@@ -28,8 +28,6 @@ __attribute__((destructor)) void after_main();
 
 void _sysy_starttime(int lineno);
 void _sysy_stoptime(int lineno);
-void starttime();
-void stoptime();
 }
 
 #endif
