@@ -28,7 +28,6 @@ __attribute__((destructor)) void after_main();
 
 void _sysy_starttime(int lineno);
 void _sysy_stoptime(int lineno);
-
 }
 
 #endif

@@ -2,11 +2,13 @@
 
 ## 使用说明
 
-预置条件：riscv64-unknown-elf工具链，python3
+预置条件：qemu-user, riscv64-unknown-elf工具链，python3
 
 ```sh
-python test.py -t <testcase_folder>
+python test.py -t <testcase_folder> [-p] [-b]
 ```
+
+其中`-t`选项指定了存放测例的路径。`-b`和`-p`是可选项，使用`-b`将启用性能评测记录程序运行时间, 设置`-p`将开启并行评测（不建议在最终评测性能时启用）。
 
 请看`test.py`，修改`compiler_path`,`compiler_args`和`gcc_args`变量，改为你的编译器路径和参数选项。
 

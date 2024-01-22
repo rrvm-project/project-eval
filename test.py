@@ -5,6 +5,7 @@ import subprocess
 import sys
 import random
 import shutil
+import time
 
 from argparse import ArgumentParser
 from enum import Enum, auto
@@ -13,18 +14,21 @@ from typing import NamedTuple, Optional, Union
 import re
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 TEST_ROUND = 1
 TIMEOUT = 120
 
 # NOTE: 在这里修改你的编译器路径和参数。此处的默认值对应着gcc
 compiler_path = "../target/release/sysyc"
-compiler_args = "-O1"
+compiler_args = "-O2"
+# compiler_args = "-O2 -march=rv32gc -mabi=ilp32f -xc++ -S -include ./runtime/sylib.h"
 
 # 调用gcc进行链接的参数
 gcc_args_rv64 = "-march=rv64gc -mabi=lp64d"
 gcc_args_rv32 = "-march=rv32gc -mabi=ilp32f"
 gcc_args = gcc_args_rv64
+
 
 class Config(NamedTuple):
     compiler: str
@@ -32,6 +36,7 @@ class Config(NamedTuple):
     compiler_args: str
     tempdir: str
     parallel: bool
+    timing: bool
 
 
 class Result(Enum):
@@ -42,12 +47,23 @@ class Result(Enum):
     GCC_ERROR = auto()
 
 
+def geometric_mean(numbers):
+    if not numbers:
+        return None
+
+    product = 1
+    for number in numbers:
+        product *= number
+
+    return product ** (1.0 / len(numbers))
+
 def get_config(argv: list[str]) -> Config:
     parser = ArgumentParser('simple-tester')
     parser.add_argument('-t', '--testcases',
                         metavar='<testcases>', required=True,
                         help='path to the directory containing testcases')
     parser.add_argument('-p', '--parallel', action='store_true', default=False, help='run parallely')
+    parser.add_argument('-b', '--benchmark', action='store_true', default=False, help='benchmark time')
     index: int
     try:
         index = argv.index('--')
@@ -59,6 +75,7 @@ def get_config(argv: list[str]) -> Config:
                   compiler_args=compiler_args,
                   tempdir='build',
                   parallel=args.parallel,
+                  timing=args.benchmark,
                   )
 
 
@@ -96,47 +113,50 @@ def run(
     name_body = os.path.basename(assembly).split('.')[0]
     executable = os.path.join(workdir, name_body + '.exec')
     output = os.path.join(workdir, name_body + '.stdout')
-    time = os.path.join(workdir, name_body + '.stderr')
+    outerr = os.path.join(workdir, name_body + '.stderr')
     if os.system(f'riscv64-unknown-elf-gcc {gcc_args} {assembly} runtime/libsysy.a'
                  f' -o {executable}') != 0:
         return Result.LINKER_ERROR
     answer_content, answer_exitcode = get_answer(answer)
-    average_time = 0
+    total_time = 0
     for _ in range(round):
+        start_time = time.time()
         proc = subprocess.Popen(
             ["qemu-riscv64", executable],
             stdin=open(input) if os.path.exists(input) else None,
-            stdout=open(output, 'w'), stderr=open(time, 'w'))
+            stdout=open(output, 'w'), stderr=open(outerr, 'w'))
         try:
             proc.wait(TIMEOUT)
         except subprocess.TimeoutExpired:
             proc.kill()
             return Result.TIME_LIMIT_EXCEEDED
+        end_time = time.time()
         output_content = [line.strip()
                           for line in open(output).read().splitlines()]
         if proc.returncode != answer_exitcode \
                 or output_content != answer_content:
             return Result.WRONG_ANSWER
-        if round > 1:
-            print('.', end='', flush=True)
-        t = get_time(time)
+        # if round > 1:
+        #     print('.', end='', flush=True)
+        t = end_time - start_time
         if t is None:
             timing = False
         else:
-            average_time += t
+            total_time += t
     if timing:
-        return average_time / 1_000 / round
+        return total_time * 1_000 / round
     else:
         return Result.PASSED
 
 
-def test(config: Config, testcase: str) -> bool:
+def test(config: Config, testcase: str, score_callback = None) -> bool:
     source = os.path.join(config.testcases, f'{testcase}.sy')
     input = os.path.join(config.testcases, f'{testcase}.in')
     answer = os.path.join(config.testcases, f'{testcase}.out')
 
     ident = '%04d' % random.randint(0, 9999)
     assembly = os.path.join(config.tempdir, f'{testcase}-{ident}.s')
+    gcc_assembly = os.path.join(config.tempdir, f'{testcase}-gcc.s')
     # NOTE: 你可以在这里修改调用你的编译器的方式
     command = (f'ulimit -s unlimited && {config.compiler} {config.compiler_args} {source}'
                 f' -o {assembly}')
@@ -150,7 +170,7 @@ def test(config: Config, testcase: str) -> bool:
     if proc.returncode != 0:
         print(testcase, '\033[0;31mCompiler Error\033[0m')
         return False
-    result = run(config.tempdir, assembly, input, answer, TEST_ROUND)
+    result = run(config.tempdir, assembly, input, answer, TEST_ROUND, config.timing)
     if result == Result.LINKER_ERROR:
         print(testcase, '\033[0;31mLinker Error\033[0m')
         return False
@@ -166,19 +186,24 @@ def test(config: Config, testcase: str) -> bool:
     if not isinstance(runtime, float) or runtime == 0:
         print(testcase, '\033[0;32mPassed\033[0m')
         return True
-    result = Result.GCC_ERROR \
+    
+    gcc_result = Result.GCC_ERROR \
         if os.system(
             f'riscv64-unknown-elf-gcc -xc++ -O2 -S {gcc_args}'
-            f' -include runtime/sylib.h {source} -o {assembly} ') != 0 \
+            f' -include runtime/sylib.h {source} -o {gcc_assembly} ') != 0 \
         and os.system(
             f'riscv64-unknown-elf-gcc -xc++ -O2 -S {gcc_args}'
-            f' -include runtime/sylib.h {source} -o {assembly}') != 0 \
-        else run(config.tempdir, assembly, input, answer, 1)
-    if isinstance(result, Result):
+            f' -include runtime/sylib.h {source} -o {gcc_assembly}') != 0 \
+        else run(config.tempdir, gcc_assembly, input, answer, TEST_ROUND, config.timing)
+    if isinstance(gcc_result, Result):
         print(testcase, '\033[0;31mGCC Error\033[0m')
     else:
-        print(testcase, f'\033[0;32m{runtime :.3f}ms / {result :.3f}ms'
-                f' = {result / runtime :.2%}\033[0m')
+        print(testcase, f'\033[0;32m{runtime :.3f}ms / {gcc_result :.3f}ms'
+                f' => {gcc_result / runtime :.2%}\033[0m')
+        
+        score = min(gcc_result / runtime * 100, 100)
+        if score_callback is not None:
+            score_callback(testcase, score)
     return True
 
 
@@ -190,10 +215,18 @@ if __name__ == '__main__':
         shutil.rmtree(config.tempdir)
     os.mkdir(config.tempdir)
 
+    score_info = []
+    scores_lock = Lock()
+    def add_score(testcase, score):
+        scores_lock.acquire()
+        score_info.append((testcase, score))
+        scores_lock.release()
+    score_callback = add_score if config.timing else None
+
     failed = []
     if config.parallel:
         futures = []
-        f = lambda t: (t, test(config, t))
+        f = lambda t: (t, test(config, t, score_callback))
         with ThreadPoolExecutor() as executor:
             for testcase in testcases:
                 futures.append(executor.submit(f, testcase))
@@ -204,12 +237,16 @@ if __name__ == '__main__':
         failed.sort()
     else:
         for testcase in testcases:
-            if not test(config, testcase):
+            if not test(config, testcase, score_callback):
                 failed.append(testcase)
     info = '\033[0;34m[info]\033[0m {}'
     if not failed:
         print(info.format('All Passed'))
+
+        if config.timing:
+            mean_score = geometric_mean([t[1] for t in score_info])
+            print("final score:", mean_score)
     else:
         for testcase in failed:
             print(info.format(f'`{testcase}` Failed'))
-        assert False, "Test fail"
+    assert not failed, "Test Fail"
