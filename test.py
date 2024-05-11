@@ -25,6 +25,7 @@ compiler_args = "-O2"
 # compiler_args = "-O2 -march=rv32gc -mabi=ilp32f -xc++ -S -include ./runtime/sylib.h"
 
 # 调用gcc进行链接的参数
+cc = "riscv64-unknown-elf-gcc"
 gcc_args_rv64 = "-march=rv64gc -mabi=lp64d"
 gcc_args_rv32 = "-march=rv32gc -mabi=ilp32f"
 gcc_args = gcc_args_rv64
@@ -37,6 +38,7 @@ class Config(NamedTuple):
     tempdir: str
     parallel: bool
     timing: bool
+    on_riscv: bool
 
 
 class Result(Enum):
@@ -58,24 +60,31 @@ def geometric_mean(numbers):
     return product ** (1.0 / len(numbers))
 
 def get_config(argv: list[str]) -> Config:
+    global cc
     parser = ArgumentParser('simple-tester')
     parser.add_argument('-t', '--testcases',
                         metavar='<testcases>', required=True,
                         help='path to the directory containing testcases')
+    parser.add_argument('-c', '--compiler',
+                        metavar='<compiler>', required=True, default="riscv64-unknown-elf-gcc",
+                        help='compiler to use, on a riscv64 machine, it should just be gcc')
     parser.add_argument('-p', '--parallel', action='store_true', default=False, help='run parallely')
     parser.add_argument('-b', '--benchmark', action='store_true', default=False, help='benchmark time')
+    parser.add_argument("--on_riscv", action='store_true', default=False, help='is on a riscv machine')
     index: int
     try:
         index = argv.index('--')
     except ValueError:
         index = len(argv)
     args = parser.parse_args(argv[:index])
+    cc = args.compiler
     return Config(compiler=compiler_path,
                   testcases=args.testcases,
                   compiler_args=compiler_args,
                   tempdir='build',
                   parallel=args.parallel,
                   timing=args.benchmark,
+                  on_riscv=args.on_riscv
                   )
 
 
@@ -109,12 +118,13 @@ def run(
     answer: str,
     round: int = 1,
     timing: bool = False,
+    on_riscv: bool = False
 ) -> Union[Result, float]:
     name_body = os.path.basename(assembly).split('.')[0]
     executable = os.path.join(workdir, name_body + '.exec')
     output = os.path.join(workdir, name_body + '.stdout')
     outerr = os.path.join(workdir, name_body + '.stderr')
-    if os.system(f'riscv64-unknown-elf-gcc {gcc_args} {assembly} runtime/libsysy.a'
+    if os.system(f'{cc} {gcc_args} {assembly} runtime/libsysy.a'
                  f' -o {executable}') != 0:
         return Result.LINKER_ERROR
     answer_content, answer_exitcode = get_answer(answer)
@@ -122,7 +132,7 @@ def run(
     for _ in range(round):
         start_time = time.time()
         proc = subprocess.Popen(
-            ["qemu-riscv64", executable],
+            [executable] if on_riscv else ["qemu-riscv64", executable],
             stdin=open(input) if os.path.exists(input) else None,
             stdout=open(output, 'w'), stderr=open(outerr, 'w'))
         try:
@@ -170,7 +180,7 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
     if proc.returncode != 0:
         print(testcase, '\033[0;31mCompiler Error\033[0m')
         return False
-    result = run(config.tempdir, assembly, input, answer, TEST_ROUND, config.timing)
+    result = run(config.tempdir, assembly, input, answer, TEST_ROUND, config.timing, config.on_riscv)
     if result == Result.LINKER_ERROR:
         print(testcase, '\033[0;31mLinker Error\033[0m')
         return False
@@ -189,10 +199,10 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
     
     gcc_result = Result.GCC_ERROR \
         if os.system(
-            f'riscv64-unknown-elf-gcc -xc++ -O2 -S {gcc_args}'
+            f'{cc} -xc++ -O2 -S {gcc_args}'
             f' -include runtime/sylib.h {source} -o {gcc_assembly} ') != 0 \
         and os.system(
-            f'riscv64-unknown-elf-gcc -xc++ -O2 -S {gcc_args}'
+            f'{cc} -xc++ -O2 -S {gcc_args}'
             f' -include runtime/sylib.h {source} -o {gcc_assembly}') != 0 \
         else run(config.tempdir, gcc_assembly, input, answer, TEST_ROUND, config.timing)
     if isinstance(gcc_result, Result):
