@@ -1,5 +1,5 @@
-CC = riscv64-unknown-elf-gcc -march=rv64gc -mabi=lp64d -xc++
-AR = riscv64-unknown-elf-ar
+CC = gcc -xc++
+AR = ar
 RM = rm -f
 
 .PHONY: clean

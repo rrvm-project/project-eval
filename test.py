@@ -145,6 +145,7 @@ def run(
                           for line in open(output).read().splitlines()]
         if proc.returncode != answer_exitcode \
                 or output_content != answer_content:
+            print(proc.returncode, " ", answer_exitcode)
             return Result.WRONG_ANSWER
         # if round > 1:
         #     print('.', end='', flush=True)
@@ -204,7 +205,7 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
         and os.system(
             f'{cc} -xc++ -O2 -S {gcc_args}'
             f' -include runtime/sylib.h {source} -o {gcc_assembly}') != 0 \
-        else run(config.tempdir, gcc_assembly, input, answer, TEST_ROUND, config.timing)
+        else run(config.tempdir, gcc_assembly, input, answer, TEST_ROUND, config.timing, config.on_riscv)
     if isinstance(gcc_result, Result):
         print(testcase, '\033[0;31mGCC Error\033[0m')
     else:
