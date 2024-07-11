@@ -20,7 +20,7 @@ TEST_ROUND = 1
 TIMEOUT = 120
 
 # NOTE: 在这里修改你的编译器路径和参数。此处的默认值对应着gcc
-compiler_path = "../target/release/sysyc"
+compiler_path = "../target/release/compiler"
 compiler_args = "-O2"
 # compiler_args = "-O2 -march=rv32gc -mabi=ilp32f -xc++ -S -include ./runtime/sylib.h"
 
@@ -145,7 +145,7 @@ def run(
                           for line in open(output).read().splitlines()]
         if proc.returncode != answer_exitcode \
                 or output_content != answer_content:
-            print(proc.returncode, " ", answer_exitcode)
+            print(proc.returncode, " ", answer_exitcode, flush=True)
             return Result.WRONG_ANSWER
         # if round > 1:
         #     print('.', end='', flush=True)
@@ -176,26 +176,26 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
         proc.wait(TIMEOUT)
     except subprocess.TimeoutExpired:
         proc.kill()
-        print(testcase, '\033[0;31mCompiler TLE\033[0m')
+        print(testcase, '\033[0;31mCompiler TLE\033[0m', flush=True)
         return False
     if proc.returncode != 0:
-        print(testcase, '\033[0;31mCompiler Error\033[0m')
+        print(testcase, '\033[0;31mCompiler Error\033[0m', flush=True)
         return False
     result = run(config.tempdir, assembly, input, answer, TEST_ROUND, config.timing, config.on_riscv)
     if result == Result.LINKER_ERROR:
-        print(testcase, '\033[0;31mLinker Error\033[0m')
+        print(testcase, '\033[0;31mLinker Error\033[0m', flush=True)
         return False
     elif result == Result.WRONG_ANSWER:
-        print(testcase, '\033[0;31mWrong Answer\033[0m')
+        print(testcase, '\033[0;31mWrong Answer\033[0m', flush=True)
         return False
     elif result == Result.TIME_LIMIT_EXCEEDED:
-        print(testcase, '\033[0;31mTime Limit Exceeded\033[0m')
+        print(testcase, '\033[0;31mTime Limit Exceeded\033[0m', flush=True)
         return False
     else:
         runtime = result
     # print(' ', end='')
     if not isinstance(runtime, float) or runtime == 0:
-        print(testcase, '\033[0;32mPassed\033[0m')
+        print(testcase, '\033[0;32mPassed\033[0m', flush=True)
         return True
     
     gcc_result = Result.GCC_ERROR \
@@ -207,10 +207,10 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
             f' -include runtime/sylib.h {source} -o {gcc_assembly}') != 0 \
         else run(config.tempdir, gcc_assembly, input, answer, TEST_ROUND, config.timing, config.on_riscv)
     if isinstance(gcc_result, Result):
-        print(testcase, '\033[0;31mGCC Error\033[0m')
+        print(testcase, '\033[0;31mGCC Error\033[0m', flush=True)
     else:
         print(testcase, f'\033[0;32m{runtime :.3f}ms / {gcc_result :.3f}ms'
-                f' => {gcc_result / runtime :.2%}\033[0m')
+                f' => {gcc_result / runtime :.2%}\033[0m', flush=True)
         
         score = min(gcc_result / runtime * 100, 100)
         if score_callback is not None:
@@ -252,12 +252,12 @@ if __name__ == '__main__':
                 failed.append(testcase)
     info = '\033[0;34m[info]\033[0m {}'
     if not failed:
-        print(info.format('All Passed'))
+        print(info.format('All Passed'), flush=True)
 
         if config.timing:
             mean_score = geometric_mean([t[1] for t in score_info])
-            print("final score:", mean_score)
+            print("final score:", mean_score, flush=True)
     else:
         for testcase in failed:
-            print(info.format(f'`{testcase}` Failed'))
+            print(info.format(f'`{testcase}` Failed'), flush=True)
     assert not failed, "Test Fail"
