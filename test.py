@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import sys
 import random
@@ -20,7 +21,7 @@ TEST_ROUND = 1
 TIMEOUT = 120
 
 # NOTE: 在这里修改你的编译器路径和参数。此处的默认值对应着gcc
-compiler_path = "../target/release/compiler"
+compiler_path = "./tmp/compiler"
 compiler_args = "-O2"
 # compiler_args = "-O2 -march=rv32gc -mabi=ilp32f -xc++ -S -include ./runtime/sylib.h"
 
@@ -29,6 +30,10 @@ cc = "riscv64-unknown-elf-gcc"
 gcc_args_rv64 = "-march=rv64gc -mabi=lp64d"
 gcc_args_rv32 = "-march=rv32gc -mabi=ilp32f"
 gcc_args = gcc_args_rv64
+rival_compiler = "riscv64-unknown-elf-gcc"
+rival_time = None
+rival_time_lock = Lock()
+cur_testcases = None
 
 
 class Config(NamedTuple):
@@ -39,6 +44,8 @@ class Config(NamedTuple):
     parallel: bool
     timing: bool
     on_riscv: bool
+    store_time: bool
+    rival_compiler: str
 
 
 class Result(Enum):
@@ -61,16 +68,23 @@ def geometric_mean(numbers):
 
 def get_config(argv: list[str]) -> Config:
     global cc
+    global rival_compiler
+    global rival_time
+    global cur_testcases
     parser = ArgumentParser('simple-tester')
     parser.add_argument('-t', '--testcases',
                         metavar='<testcases>', required=True,
                         help='path to the directory containing testcases')
     parser.add_argument('-c', '--compiler',
                         metavar='<compiler>', required=True, default="riscv64-unknown-elf-gcc",
-                        help='compiler to use, on a riscv64 machine, it should just be gcc')
+                        help='compiler to use for generating executable, on a riscv64 machine, it should just be gcc')
+    parser.add_argument('-r', '--rival_compiler',
+                        metavar='<rival_compiler>', required=True, default="riscv64-unknown-elf-gcc",
+                        help='the name of the compiler to rival')
     parser.add_argument('-p', '--parallel', action='store_true', default=False, help='run parallely')
     parser.add_argument('-b', '--benchmark', action='store_true', default=False, help='benchmark time')
     parser.add_argument("--on_riscv", action='store_true', default=False, help='is on a riscv machine')
+    parser.add_argument("--store_time", action='store_true', default=False, help='whether to store time result')
     index: int
     try:
         index = argv.index('--')
@@ -78,13 +92,32 @@ def get_config(argv: list[str]) -> Config:
         index = len(argv)
     args = parser.parse_args(argv[:index])
     cc = args.compiler
+    # 如果存在文件 ./args.compiler/args.compiler, 就将这个路径赋值给 cc
+    path_to_rival = "./rivals/{}/{}".format(args.rival_compiler, args.rival_compiler)
+    if os.path.exists(path_to_rival):
+        rival_compiler = path_to_rival
+    else:
+        rival_compiler = args.rival_compiler
+    path_to_rival_time = "./rivals/{}/{}.json".format(args.rival_compiler, args.rival_compiler)
+    if not os.path.exists(path_to_rival_time):
+        with open(path_to_rival_time, "w") as f:
+            json.dump({}, f)
+    
+    cur_testcases = args.testcases
+    if os.path.exists(path_to_rival_time):
+        rival_time = json.load(open(path_to_rival_time, "r"))
+        rival_time = rival_time.get(args.testcases)
+    if rival_time is None:
+        rival_time = {}
     return Config(compiler=compiler_path,
                   testcases=args.testcases,
                   compiler_args=compiler_args,
                   tempdir='build',
                   parallel=args.parallel,
                   timing=args.benchmark,
-                  on_riscv=args.on_riscv
+                  on_riscv=args.on_riscv,
+                  store_time=args.store_time,
+                  rival_compiler=args.rival_compiler
                   )
 
 
@@ -124,9 +157,13 @@ def run(
     executable = os.path.join(workdir, name_body + '.exec')
     output = os.path.join(workdir, name_body + '.stdout')
     outerr = os.path.join(workdir, name_body + '.stderr')
+    print(f'{cc} {gcc_args} {assembly} runtime/libsysy.a'
+                 f' -o {executable}')
     if os.system(f'{cc} {gcc_args} {assembly} runtime/libsysy.a'
                  f' -o {executable}') != 0:
         return Result.LINKER_ERROR
+    print(f'{cc} {gcc_args} {assembly} runtime/libsysy.a'
+                 f' -o {executable}')
     answer_content, answer_exitcode = get_answer(answer)
     total_time = 0
     for _ in range(round):
@@ -161,6 +198,8 @@ def run(
 
 
 def test(config: Config, testcase: str, score_callback = None) -> bool:
+    global rival_time
+    global rival_time_lock
     source = os.path.join(config.testcases, f'{testcase}.sy')
     input = os.path.join(config.testcases, f'{testcase}.in')
     answer = os.path.join(config.testcases, f'{testcase}.out')
@@ -197,18 +236,30 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
     if not isinstance(runtime, float) or runtime == 0:
         print(testcase, '\033[0;32mPassed\033[0m', flush=True)
         return True
-    
-    gcc_result = Result.GCC_ERROR \
-        if os.system(
-            f'{cc} -xc++ -O2 -S {gcc_args}'
-            f' -include runtime/sylib.h {source} -o {gcc_assembly} ') != 0 \
-        and os.system(
-            f'{cc} -xc++ -O2 -S {gcc_args}'
-            f' -include runtime/sylib.h {source} -o {gcc_assembly}') != 0 \
-        else run(config.tempdir, gcc_assembly, input, answer, TEST_ROUND, config.timing, config.on_riscv)
+    asm_gen_command = f'{rival_compiler} -xc++ -O2 -S {gcc_args} -include runtime/sylib.h {source} -o {gcc_assembly} '
+    if 'gcc' not in config.rival_compiler:
+        # 即使用来对比的编译器不是 gcc，这里的变量名也还是 gcc_assembly。别问，问就是懒得改了 :(
+        asm_gen_command = f'{rival_compiler} -S -o {gcc_assembly} {source}'
+    print(asm_gen_command)
+    gcc_result = Result.GCC_ERROR
+    name_body = os.path.basename(gcc_assembly).split('.')[0]
+    if os.system(asm_gen_command) == 0:
+        if not config.store_time:
+            rival_time_lock.acquire()
+            gcc_result = rival_time.get(name_body)
+            rival_time_lock.release()
+            if gcc_result is None:
+                gcc_result = run(config.tempdir, gcc_assembly, input, answer, TEST_ROUND, config.timing, config.on_riscv)
+        else:
+            gcc_result = run(config.tempdir, gcc_assembly, input, answer, TEST_ROUND, config.timing, config.on_riscv)
+        
     if isinstance(gcc_result, Result):
         print(testcase, '\033[0;31mGCC Error\033[0m', flush=True)
     else:
+        if config.store_time:
+            rival_time_lock.acquire()
+            rival_time[name_body] = gcc_result
+            rival_time_lock.release()
         print(testcase, f'\033[0;32m{runtime :.3f}ms / {gcc_result :.3f}ms'
                 f' => {gcc_result / runtime :.2%}\033[0m', flush=True)
         
@@ -251,6 +302,14 @@ if __name__ == '__main__':
             if not test(config, testcase, score_callback):
                 failed.append(testcase)
     info = '\033[0;34m[info]\033[0m {}'
+    if config.store_time:
+        with open(f'./rivals/{config.rival_compiler}/{config.rival_compiler}.json', 'r') as f:
+            rival_times = json.load(f)
+        if rival_time is None:
+            rival_time = {}
+        with open(f'./rivals/{config.rival_compiler}/{config.rival_compiler}.json', 'w') as f:
+            rival_times[config.testcases] = rival_time
+            json.dump(rival_times, f)
     if not failed:
         print(info.format('All Passed'), flush=True)
 
