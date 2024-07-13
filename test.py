@@ -21,7 +21,7 @@ TEST_ROUND = 1
 TIMEOUT = 120
 
 # NOTE: 在这里修改你的编译器路径和参数。此处的默认值对应着gcc
-compiler_path = "./tmp/compiler"
+compiler_path = "../target/release/compiler"
 compiler_args = "-O2"
 # compiler_args = "-O2 -march=rv32gc -mabi=ilp32f -xc++ -S -include ./runtime/sylib.h"
 
@@ -157,13 +157,9 @@ def run(
     executable = os.path.join(workdir, name_body + '.exec')
     output = os.path.join(workdir, name_body + '.stdout')
     outerr = os.path.join(workdir, name_body + '.stderr')
-    print(f'{cc} {gcc_args} {assembly} runtime/libsysy.a'
-                 f' -o {executable}')
     if os.system(f'{cc} {gcc_args} {assembly} runtime/libsysy.a'
                  f' -o {executable}') != 0:
         return Result.LINKER_ERROR
-    print(f'{cc} {gcc_args} {assembly} runtime/libsysy.a'
-                 f' -o {executable}')
     answer_content, answer_exitcode = get_answer(answer)
     total_time = 0
     for _ in range(round):
@@ -184,8 +180,6 @@ def run(
                 or output_content != answer_content:
             print(proc.returncode, " ", answer_exitcode, flush=True)
             return Result.WRONG_ANSWER
-        # if round > 1:
-        #     print('.', end='', flush=True)
         t = end_time - start_time
         if t is None:
             timing = False
@@ -240,7 +234,6 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
     if 'gcc' not in config.rival_compiler:
         # 即使用来对比的编译器不是 gcc，这里的变量名也还是 gcc_assembly。别问，问就是懒得改了 :(
         asm_gen_command = f'{rival_compiler} -S -o {gcc_assembly} {source}'
-    print(asm_gen_command)
     gcc_result = Result.GCC_ERROR
     name_body = os.path.basename(gcc_assembly).split('.')[0]
     if os.system(asm_gen_command) == 0:
