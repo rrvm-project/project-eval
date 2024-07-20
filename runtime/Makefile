@@ -1,5 +1,7 @@
-CC = gcc -xc++
-AR = ar
+# CC = gcc -xc++
+# AR = ar
+CC = riscv64-unknown-elf-gcc -xc++
+AR = riscv64-unknown-elf-ar
 RM = rm -f
 
 .PHONY: clean
