@@ -66,6 +66,13 @@ def geometric_mean(numbers):
 
     return product ** (1.0 / len(numbers))
 
+# 计算算术平均数
+def arithmetic_mean(numbers):
+    if not numbers:
+        return None
+
+    return sum(numbers) / len(numbers)
+
 def get_config(argv: list[str]) -> Config:
     global cc
     global rival_compiler
@@ -307,7 +314,7 @@ if __name__ == '__main__':
         print(info.format('All Passed'), flush=True)
 
         if config.timing:
-            mean_score = geometric_mean([t[1] for t in score_info])
+            mean_score = arithmetic_mean([t[1] for t in score_info])
             print("final score:", mean_score, flush=True)
     else:
         for testcase in failed:
