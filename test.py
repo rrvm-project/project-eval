@@ -198,7 +198,7 @@ def run(
         return Result.PASSED
 
 
-def test(config: Config, testcase: str, score_callback = None) -> bool:
+def test(config: Config, testcase: str, score_callback = None) -> str:
     global rival_time
     global rival_time_lock
     source = os.path.join(config.testcases, f'{testcase}.sy')
@@ -217,26 +217,26 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
     except subprocess.TimeoutExpired:
         proc.kill()
         print(testcase, '\033[0;31mCompiler TLE\033[0m', flush=True)
-        return False
+        return '\033[0;31mCompiler TLE\033[0m'
     if proc.returncode != 0:
         print(testcase, '\033[0;31mCompiler Error\033[0m', flush=True)
-        return False
+        return '\033[0;31mCompiler Error\033[0m'
     result = run(config.tempdir, assembly, input, answer, TEST_ROUND, config.timing, config.on_riscv)
     if result == Result.LINKER_ERROR:
         print(testcase, '\033[0;31mLinker Error\033[0m', flush=True)
-        return False
+        return '\033[0;31mLinker Error\033[0m'
     elif result == Result.WRONG_ANSWER:
         print(testcase, '\033[0;31mWrong Answer\033[0m', flush=True)
-        return False
+        return '\033[0;31mWrong Answer\033[0m'
     elif result == Result.TIME_LIMIT_EXCEEDED:
         print(testcase, '\033[0;31mTime Limit Exceeded\033[0m', flush=True)
-        return False
+        return '\033[0;31mTime Limit Exceeded\033[0m'
     else:
         runtime = result
     # print(' ', end='')
     if not isinstance(runtime, float) or runtime == 0:
         print(testcase, '\033[0;32mPassed\033[0m', flush=True)
-        return True
+        return 'Passed'
     asm_gen_command = f'{rival_compiler} -xc++ -O2 -S {gcc_args} -include runtime/sylib.h {source} -o {gcc_assembly} '
     if 'gcc' not in config.rival_compiler:
         # 即使用来对比的编译器不是 gcc，这里的变量名也还是 gcc_assembly。别问，问就是懒得改了 :(
@@ -255,6 +255,7 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
         
     if isinstance(gcc_result, Result):
         print(testcase, '\033[0;31mGCC Error\033[0m', flush=True)
+        return '\033[0;31mGCC Error\033[0m'
     else:
         if config.store_time:
             rival_time_lock.acquire()
@@ -266,7 +267,7 @@ def test(config: Config, testcase: str, score_callback = None) -> bool:
         score = min(gcc_result / runtime * 100, 100)
         if score_callback is not None:
             score_callback(testcase, score)
-    return True
+    return 'Passed'
 
 
 if __name__ == '__main__':
@@ -294,13 +295,14 @@ if __name__ == '__main__':
                 futures.append(executor.submit(f, testcase))
             for future in as_completed(futures):
                 testcase, ok = future.result()
-                if not ok:
-                    failed.append(testcase)
+                if ok != 'Passed':
+                    failed.append('`' + testcase + "` " + ok)
         failed.sort()
     else:
         for testcase in testcases:
-            if not test(config, testcase, score_callback):
-                failed.append(testcase)
+            result = test(config, testcase, score_callback)
+            if result != 'Passed':
+                failed.append('`' + testcase + "` " + result)
     info = '\033[0;34m[info]\033[0m {}'
     if config.store_time:
         with open(f'./rivals/{config.rival_compiler}/{config.rival_compiler}.json', 'r') as f:
@@ -318,5 +320,5 @@ if __name__ == '__main__':
             print("final score:", mean_score, flush=True)
     else:
         for testcase in failed:
-            print(info.format(f'`{testcase}` Failed'), flush=True)
+            print(info.format(f'{testcase}'), flush=True)
     assert not failed, "Test Fail"
