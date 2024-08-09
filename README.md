@@ -16,10 +16,12 @@ git lfs install
 ### 本地测试
 
 ```sh
-python test.py -t <testcase_folder> [-p] [-b] -c <riscv64-unknown-elf-gcc> -r <rival_compiler> [--on_riscv] [--store_time]
+python test.py -t <testcase_folder> [-p] [-b] -O <optimize_level> -c <riscv64-unknown-elf-gcc> -r <rival_compiler> [--on_riscv] [--store_time]
 ```
 
 其中`-t`选项指定了存放测例的路径。`-b`和`-p`是可选项，使用`-b`将启用性能评测记录程序运行时间, 设置`-p`将开启并行评测（不建议在最终评测性能时启用）。
+
+-O: 优化级别
 
 -c：表示用于链接动态库的编译器，一般用 riscv64-unknown-elf-gcc
 
@@ -59,7 +61,7 @@ json 文件格式：
 
 
 ```sh
-python test_on_remote.py -t <testcase_folder> [-p] [-b] -r <riscv64-unknown-elf-gcc> [--store_time] --remote_address <ip_address> --remote_port <port>
+python test_on_remote.py -t <testcase_folder> [-p] [-b] -O <optimize_level> -r <riscv64-unknown-elf-gcc> [--store_time] --remote_address <ip_address> --remote_port <port>
 ```
 
 我们假设 riscv 开发板上已经运行了一个后端，它和 [sysyc_tester](https://github.com/rrvm-project/sysyc_tester) 一样有上传文件和运行测试的同名接口。你需要通过 --remote_address 和 --remote_port 指定后端服务器的地址和端口
@@ -73,19 +75,17 @@ python test_on_remote.py -t <testcase_folder> [-p] [-b] -r <riscv64-unknown-elf-
 
 （以下对 test_on_remote.py 同理）
 
-请看`test.py`，修改`compiler_path`,`compiler_args`和`gcc_args`变量，改为你的编译器路径和参数选项。
+请看`test.py`，修改`compiler_path`和`gcc_args`变量，改为你的编译器路径和 gcc 参数选项。
 
 例如
 ```Python
 compiler_path = "./build/mycompiler"
-compiler_args = "-O2"
 ```
-此处`compiler_args`为提供给你的编译器的额外选项。
 
 我们会以下面的命令模板调用你的编译器生成汇编代码
 ```bash
-# {compiler_path} {compiler_args} xxx.sy -o xxx.s
-./build/mycompiler -O2 xxx.sy -o xxx.s
+{compiler_path} -O{optimize_level} xxx.sy -o xxx.s
+e.g. ./build/mycompiler -O2 xxx.sy -o xxx.s
 ```
 如果你的编译器不支持这样的命令格式，请在`test`函数中的注释附近修改。
 

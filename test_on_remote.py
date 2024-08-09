@@ -22,10 +22,8 @@ from threading import Lock
 TEST_ROUND = 1
 TIMEOUT = 120
 
-# NOTE: 在这里修改你的编译器路径和参数。此处的默认值对应着gcc
+# NOTE: 在这里修改你的编译器路径。
 compiler_path = "../target/release/compiler"
-compiler_args = "-O2"
-# compiler_args = "-O2 -march=rv32gc -mabi=ilp32f -xc++ -S -include ./runtime/sylib.h"
 
 # 调用gcc进行链接的参数
 gcc_args_rv64 = "-march=rv64gc -mabi=lp64d"
@@ -43,7 +41,7 @@ folder = str(uuid.uuid4())
 class Config(NamedTuple):
     compiler: str
     testcases: str
-    compiler_args: str
+    optimize_level: str
     tempdir: str
     parallel: bool
     timing: bool
@@ -142,7 +140,7 @@ def test(config: Config, testcase: str, score_callback = None) -> str:
     assembly = os.path.join(config.tempdir, f'{testcase}-{ident}.s')
     gcc_assembly = os.path.join(config.tempdir, f'{testcase}-gcc.s')
     # NOTE: 你可以在这里修改调用你的编译器的方式
-    command = (f'ulimit -s unlimited && {config.compiler} {config.compiler_args} {source}'
+    command = (f'ulimit -s unlimited && {config.compiler} -O{config.optimize_level} {source}'
                 f' -o {assembly}')
     proc = subprocess.Popen(command, shell=True)
     try:
@@ -265,6 +263,7 @@ def get_config(argv: list[str]) -> Config:
     parser.add_argument('--remote_port',
                         metavar='<remote_port>', required=True,
                         help='remote port for running executables')
+    parser.add_argument('-O', '--optimize_level', required=True, default="2", help='the optimize level of the compiler')
     parser.add_argument('-p', '--parallel', action='store_true', default=False, help='run parallely')
     parser.add_argument('-b', '--benchmark', action='store_true', default=False, help='benchmark time')
     parser.add_argument("--store_time", action='store_true', default=False, help='whether to store time result')
@@ -294,7 +293,7 @@ def get_config(argv: list[str]) -> Config:
     remote_url = f"http://{args.remote_address}:{args.remote_port}/"
     return Config(compiler=compiler_path,
                   testcases=args.testcases,
-                  compiler_args=compiler_args,
+                  optimize_level=args.optimize_level,
                   tempdir='build',
                   parallel=args.parallel,
                   timing=args.benchmark,
