@@ -185,44 +185,69 @@ def test(config: Config, testcase: str, score_callback = None) -> str:
         print(testcase, '\033[0;32mPassed\033[0m', flush=True)
         return 'Passed'
     
-    asm_gen_command = f'{rival_compiler} -S -o {gcc_assembly} {source}'
-    flag = False
-    if 'gcc' == config.rival_compiler:        
-        url = remote_url + f"upload?folder={folder}"
-        source_file = open(source, 'rb')
-        files = {
-            'source': source_file,
-        }
-        requests.post(url=url, files=files)
-        source_file.close()
-        files = {
-            "folder": folder,
-            "name": os.path.basename(source).split('.')[0],
-            "name_without_suffix": ""
-        }
-        resp = requests.post(remote_url + "compile", json=files)
-        flag |= (resp.status_code == 200)
-    else:
-        flag |= os.system(asm_gen_command) == 0
-        asm = open(gcc_assembly, 'rb')
-        files = {
-            'asm': asm,
-        }
-        requests.post(url=url, files=files)
-        for f in files.values():
-            f.close()
-    
-    gcc_result = Result.GCC_ERROR
     name_body = os.path.basename(gcc_assembly).split('.')[0]
-    if flag:
-        if not config.store_time:
-            rival_time_lock.acquire()
-            gcc_result = rival_time.get(name_body)
-            rival_time_lock.release()
-            if gcc_result is None:
-                gcc_result = run(gcc_assembly, input, answer, config.timing)
-        else:
+    gcc_result = Result.GCC_ERROR
+    if not config.store_time:
+        rival_time_lock.acquire()
+        gcc_result = rival_time.get(name_body)
+        rival_time_lock.release()
+        if gcc_result is None:
+            asm_gen_command = f'{rival_compiler} -S -o {gcc_assembly} {source}'
+            flag = False
+            if 'gcc' == config.rival_compiler:        
+                url = remote_url + f"upload?folder={folder}"
+                source_file = open(source, 'rb')
+                files = {
+                    'source': source_file,
+                }
+                requests.post(url=url, files=files)
+                source_file.close()
+                files = {
+                    "folder": folder,
+                    "name": os.path.basename(source).split('.')[0],
+                    "name_without_suffix": ""
+                }
+                resp = requests.post(remote_url + "compile", json=files)
+                flag |= (resp.status_code == 200)
+            else:
+                flag |= os.system(asm_gen_command) == 0
+                asm = open(gcc_assembly, 'rb')
+                files = {
+                    'asm': asm,
+                }
+                requests.post(url=url, files=files)
+                for f in files.values():
+                    f.close()
             gcc_result = run(gcc_assembly, input, answer, config.timing)
+    else:
+        asm_gen_command = f'{rival_compiler} -S -o {gcc_assembly} {source}'
+        flag = False
+        if 'gcc' == config.rival_compiler:        
+            url = remote_url + f"upload?folder={folder}"
+            source_file = open(source, 'rb')
+            files = {
+                'source': source_file,
+            }
+            requests.post(url=url, files=files)
+            source_file.close()
+            files = {
+                "folder": folder,
+                "name": os.path.basename(source).split('.')[0],
+                "name_without_suffix": ""
+            }
+            resp = requests.post(remote_url + "compile", json=files)
+            flag |= (resp.status_code == 200)
+        else:
+            flag |= os.system(asm_gen_command) == 0
+            asm = open(gcc_assembly, 'rb')
+            files = {
+                'asm': asm,
+            }
+            requests.post(url=url, files=files)
+            for f in files.values():
+                f.close()
+        gcc_result = run(gcc_assembly, input, answer, config.timing)
+    
         
     if isinstance(gcc_result, Result):
         print(testcase, '\033[0;31mGCC Error\033[0m', flush=True, end=" ")
