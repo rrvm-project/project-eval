@@ -201,6 +201,14 @@ def test(config: Config, testcase: str, score_callback = None) -> str:
     global rival_time
     global rival_time_lock
     source = os.path.join(config.testcases, f'{testcase}.sy')
+    # 合并两个太大的case
+    path_join_sort=os.path.join(config.testcases, '03_sortaa')
+    path_join_sort2=os.path.join(config.testcases, '03_sortab')
+    os.system(f"cat {path_join_sort} {path_join_sort2} > {os.path.join(config.testcases, '03_sort2.in')}")
+    path_join_shuffle2=os.path.join(config.testcases, 'shuffle2aa')
+    path_join_shuffle2b=os.path.join(config.testcases, 'shuffle2ab')
+    os.system(f"cat {path_join_shuffle2} {path_join_shuffle2b} > {os.path.join(config.testcases, 'shuffle2.in')}")
+    
     input = os.path.join(config.testcases, f'{testcase}.in')
     answer = os.path.join(config.testcases, f'{testcase}.out')
 
